@@ -22,6 +22,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/profits/offers', [ProfitController::class, 'getOfferStats']);
     Route::get('/profits/affiliates', [ProfitController::class, 'getAffiliateStats']);
     Route::get('/profits/advertisers', [ProfitController::class, 'getAdvertiserStats']);
+    Route::get('/dashboard/stats', [ProfitController::class, 'getDashboardStats']);
     
     // New Everflow endpoints
     Route::get('/offers', [EverflowController::class, 'getOffers']);

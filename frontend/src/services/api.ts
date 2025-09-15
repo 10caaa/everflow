@@ -115,6 +115,31 @@ export interface DateRange {
   end_date: string;
 }
 
+export interface DashboardStats {
+  success: boolean;
+  period: {
+    start_date: string;
+    end_date: string;
+  };
+  summary: {
+    total_profit: number;
+    total_clicks: number;
+    total_conversions: number;
+    total_revenue: number;
+    conversion_rate: number;
+  };
+  top_performers: {
+    offers: Profit[];
+    affiliates: Affiliate[];
+    advertisers: Affiliate[];
+  };
+  data_sources: {
+    offers: string;
+    affiliates: string;
+    advertisers: string;
+  };
+}
+
 // Service d'authentification
 export const authService = {
   // Connexion
@@ -296,6 +321,21 @@ export const profitService = {
       return response.data;
     } catch (error) {
       console.error('Erreur lors de la récupération des stats affiliés (auth):', error);
+      throw error;
+    }
+  },
+
+  // Récupérer les statistiques du dashboard avec données réelles
+  async getDashboardStats(dateRange: DateRange): Promise<DashboardStats> {
+    try {
+      console.log('Récupération des stats dashboard...', dateRange);
+      const response = await api.get('/dashboard/stats', {
+        params: dateRange
+      });
+      console.log('Stats dashboard récupérées:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('Erreur lors de la récupération des stats dashboard:', error);
       throw error;
     }
   }

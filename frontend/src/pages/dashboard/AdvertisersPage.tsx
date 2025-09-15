@@ -1,9 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
-import { Building, Search, Filter, Download, Star, Zap } from 'lucide-react';
+import { Building, Search, Filter, Star, Zap } from 'lucide-react';
 import { profitService } from '../../services/api';
+import { Pagination } from '../../components/ui/pagination';
+import { SortableTable, SortableColumn, SortDirection } from '../../components/ui/sortable-table';
 
 interface AdvertiserStat {
   id: string;
@@ -29,6 +31,12 @@ export function AdvertisersPage() {
   const [endDate, setEndDate] = useState(() => {
     return new Date().toISOString().split('T')[0];
   });
+
+  // Pagination and sorting states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [sortKey, setSortKey] = useState<string>('');
+  const [sortDirection, setSortDirection] = useState<SortDirection>(null);
 
   useEffect(() => {
     fetchAdvertisers();
@@ -63,12 +71,74 @@ export function AdvertisersPage() {
     }
   };
 
-  const filteredAdvertisers = advertisers.filter(advertiser =>
-    advertiser.advertiser?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (advertiser.offer && advertiser.offer.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  // Define table columns
+  const columns: SortableColumn[] = [
+    { key: 'advertiser', label: 'Advertiser', sortable: true },
+    { key: 'offer', label: 'Top Offer', sortable: true },
+    { key: 'clicks', label: 'Clicks', sortable: true, className: 'text-right' },
+    { key: 'conversions', label: 'Conversions', sortable: true, className: 'text-right' },
+    { key: 'conversion_rate', label: 'Conv. Rate', sortable: true, className: 'text-right' },
+    { key: 'revenue', label: 'Revenue', sortable: true, className: 'text-right' },
+    { key: 'payout', label: 'Payout', sortable: true, className: 'text-right' },
+    { key: 'profit', label: 'Profit', sortable: true, className: 'text-right' }
+  ];
 
-  const totalStats = filteredAdvertisers.reduce(
+  // Handle sorting
+  const handleSort = (key: string) => {
+    if (sortKey === key) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : sortDirection === 'desc' ? null : 'asc');
+    } else {
+      setSortKey(key);
+      setSortDirection('asc');
+    }
+  };
+
+  // Filter and sort data
+  const filteredAndSortedAdvertisers = useMemo(() => {
+    let filtered = advertisers.filter(advertiser =>
+      advertiser.advertiser?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (advertiser.offer && advertiser.offer.toLowerCase().includes(searchTerm.toLowerCase()))
+    );
+
+    if (sortKey && sortDirection) {
+      filtered.sort((a, b) => {
+        const aValue = a[sortKey as keyof AdvertiserStat];
+        const bValue = b[sortKey as keyof AdvertiserStat];
+        
+        if (typeof aValue === 'string' && typeof bValue === 'string') {
+          return sortDirection === 'asc' 
+            ? aValue.localeCompare(bValue)
+            : bValue.localeCompare(aValue);
+        }
+        
+        if (typeof aValue === 'number' && typeof bValue === 'number') {
+          return sortDirection === 'asc' 
+            ? aValue - bValue
+            : bValue - aValue;
+        }
+        
+        return 0;
+      });
+    }
+
+    return filtered;
+  }, [advertisers, searchTerm, sortKey, sortDirection]);
+
+  // Paginate data
+  const paginatedAdvertisers = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    return filteredAndSortedAdvertisers.slice(startIndex, endIndex);
+  }, [filteredAndSortedAdvertisers, currentPage, itemsPerPage]);
+
+  const totalPages = Math.ceil(filteredAndSortedAdvertisers.length / itemsPerPage);
+
+  // Reset to first page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, startDate, endDate]);
+
+  const totalStats = filteredAndSortedAdvertisers.reduce(
     (acc, advertiser) => ({
       clicks: acc.clicks + advertiser.clicks,
       conversions: acc.conversions + advertiser.conversions,
@@ -79,42 +149,31 @@ export function AdvertisersPage() {
   );
 
   // Classify advertisers by performance
-  const premiumAdvertisers = filteredAdvertisers.filter(a => a.profit > 1000);
-  const standardAdvertisers = filteredAdvertisers.filter(a => a.profit >= 100 && a.profit <= 1000);
-  const needsAttentionAdvertisers = filteredAdvertisers.filter(a => a.profit < 100);
+  const premiumAdvertisers = filteredAndSortedAdvertisers.filter(a => a.profit > 1000);
+  const standardAdvertisers = filteredAndSortedAdvertisers.filter(a => a.profit >= 100 && a.profit <= 1000);
+  const needsAttentionAdvertisers = filteredAndSortedAdvertisers.filter(a => a.profit < 100);
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-3xl font-bold text-gray-900 flex items-center">
-            <Building className="mr-3 h-8 w-8 text-blue-600" />
-            Annonceurs
-          </h2>
-          <p className="text-gray-600 mt-2">Gestion de vos partenaires publicitaires et leurs performances</p>
-        </div>
-        <Button className="flex items-center">
-          <Download className="mr-2 h-4 w-4" />
-          Rapport
-        </Button>
-      </div>
+    <div className="space-y-6 min-h-[800px]">
 
       {/* Filters */}
       <Card>
         <CardContent className="p-6">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <Input
-                placeholder="Rechercher un annonceur..."
-                value={searchTerm}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchTerm(e.target.value)}
-                className="pl-10"
-              />
+            <div className="flex flex-col">
+              <label className="text-sm font-medium text-foreground mb-1 block">Search</label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search advertisers..."
+                  value={searchTerm}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchTerm(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
             </div>
             <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Date de début</label>
+              <label className="text-sm font-medium text-foreground mb-1 block">Start Date</label>
               <Input
                 type="date"
                 value={startDate}
@@ -122,17 +181,18 @@ export function AdvertisersPage() {
               />
             </div>
             <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Date de fin</label>
+              <label className="text-sm font-medium text-foreground mb-1 block">End Date</label>
               <Input
                 type="date"
                 value={endDate}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEndDate(e.target.value)}
               />
             </div>
-            <div className="flex items-end">
+            <div className="flex flex-col">
+              <label className="text-sm font-medium text-foreground mb-1 block">Actions</label>
               <Button onClick={fetchAdvertisers} className="w-full">
                 <Filter className="mr-2 h-4 w-4" />
-                Actualiser
+                Refresh
               </Button>
             </div>
           </div>
@@ -252,90 +312,74 @@ export function AdvertisersPage() {
       {/* Data Table */}
       <Card>
         <CardHeader>
-          <CardTitle>Portfolio Complet ({filteredAdvertisers.length} annonceurs)</CardTitle>
+          <CardTitle>Complete Portfolio ({filteredAndSortedAdvertisers.length} advertisers)</CardTitle>
         </CardHeader>
         <CardContent>
           {isLoading ? (
             <div className="flex justify-center py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-gray-200">
-                    <th className="text-left py-3 px-4 font-medium text-gray-600">Annonceur</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-600">Offre Principal</th>
-                    <th className="text-right py-3 px-4 font-medium text-gray-600">Volume</th>
-                    <th className="text-right py-3 px-4 font-medium text-gray-600">Conversions</th>
-                    <th className="text-right py-3 px-4 font-medium text-gray-600">Performance</th>
-                    <th className="text-right py-3 px-4 font-medium text-gray-600">Dépenses</th>
-                    <th className="text-right py-3 px-4 font-medium text-gray-600">Revenus</th>
-                    <th className="text-right py-3 px-4 font-medium text-gray-600">Marge</th>
-                    <th className="text-center py-3 px-4 font-medium text-gray-600">Tier</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredAdvertisers
-                    .sort((a, b) => b.profit - a.profit)
-                    .map((advertiser) => {
-                      const tier = advertiser.profit > 1000 ? 'premium' : advertiser.profit >= 100 ? 'standard' : 'basic';
-                      return (
-                        <tr key={advertiser.id} className="border-b border-gray-100 hover:bg-gray-50">
-                          <td className="py-3 px-4">
-                            <div className="font-medium text-gray-900">{advertiser.advertiser || 'Annonceur Inconnu'}</div>
-                          </td>
-                          <td className="py-3 px-4 text-gray-600">{advertiser.offer || '-'}</td>
-                          <td className="py-3 px-4 text-right">{advertiser.clicks.toLocaleString()}</td>
-                          <td className="py-3 px-4 text-right">{advertiser.conversions.toLocaleString()}</td>
-                          <td className="py-3 px-4 text-right">
-                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                              advertiser.conversion_rate >= 2 
-                                ? 'bg-green-100 text-green-800' 
-                                : advertiser.conversion_rate >= 1 
-                                ? 'bg-yellow-100 text-yellow-800' 
-                                : 'bg-red-100 text-red-800'
-                            }`}>
-                              {advertiser.conversion_rate.toFixed(2)}%
-                            </span>
-                          </td>
-                          <td className="py-3 px-4 text-right">${advertiser.payout.toFixed(2)}</td>
-                          <td className="py-3 px-4 text-right">${advertiser.revenue.toFixed(2)}</td>
-                          <td className="py-3 px-4 text-right">
-                            <span className={`font-medium ${advertiser.profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                              ${advertiser.profit.toFixed(2)}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4 text-center">
-                            {tier === 'premium' && (
-                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                                <Star className="w-3 h-3 mr-1" />
-                                Premium
-                              </span>
-                            )}
-                            {tier === 'standard' && (
-                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                Standard
-                              </span>
-                            )}
-                            {tier === 'basic' && (
-                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                                Basic
-                              </span>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                </tbody>
-              </table>
+            <>
+              <SortableTable
+                columns={columns}
+                data={paginatedAdvertisers}
+                sortKey={sortKey}
+                sortDirection={sortDirection}
+                onSort={handleSort}
+              >
+                {(advertiser) => {
+                  const tier = advertiser.profit > 1000 ? 'premium' : advertiser.profit >= 100 ? 'standard' : 'basic';
+                  return (
+                    <>
+                      <td className="py-3 px-4">
+                        <div className="font-medium text-foreground">{advertiser.advertiser || 'Unknown Advertiser'}</div>
+                      </td>
+                      <td className="py-3 px-4 text-muted-foreground">{advertiser.offer || '-'}</td>
+                      <td className="py-3 px-4 text-right">{advertiser.clicks.toLocaleString()}</td>
+                      <td className="py-3 px-4 text-right">{advertiser.conversions.toLocaleString()}</td>
+                      <td className="py-3 px-4 text-right">
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          advertiser.conversion_rate >= 2 
+                            ? 'bg-chart-1/20 text-chart-1' 
+                            : advertiser.conversion_rate >= 1 
+                            ? 'bg-chart-3/20 text-chart-3' 
+                            : 'bg-destructive/20 text-destructive'
+                        }`}>
+                          {advertiser.conversion_rate.toFixed(2)}%
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-right">${advertiser.revenue.toFixed(2)}</td>
+                      <td className="py-3 px-4 text-right">${advertiser.payout.toFixed(2)}</td>
+                      <td className="py-3 px-4 text-right">
+                        <span className={`font-medium ${advertiser.profit >= 0 ? 'text-chart-1' : 'text-destructive'}`}>
+                          ${advertiser.profit.toFixed(2)}
+                        </span>
+                      </td>
+                    </>
+                  );
+                }}
+              </SortableTable>
               
-              {filteredAdvertisers.length === 0 && !isLoading && (
-                <div className="text-center py-8 text-gray-500">
-                  Aucun annonceur trouvé pour cette période
+              {filteredAndSortedAdvertisers.length === 0 && !isLoading && (
+                <div className="text-center py-8 text-muted-foreground">
+                  No advertisers found for this period
                 </div>
               )}
-            </div>
+
+              {filteredAndSortedAdvertisers.length > 0 && (
+                <div className="mt-4">
+                  <Pagination
+                    currentPage={currentPage}
+                    totalPages={totalPages}
+                    onPageChange={setCurrentPage}
+                    itemsPerPage={itemsPerPage}
+                    totalItems={filteredAndSortedAdvertisers.length}
+                    onItemsPerPageChange={setItemsPerPage}
+                  />
+                </div>
+              )}
+            </>
           )}
         </CardContent>
       </Card>

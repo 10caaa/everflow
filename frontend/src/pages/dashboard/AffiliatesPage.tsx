@@ -1,9 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
-import { Users, Search, Filter, Download, TrendingUp, TrendingDown } from 'lucide-react';
+import { Users, Search, Filter, TrendingUp, TrendingDown } from 'lucide-react';
 import { profitService, type DateRange } from '../../services/api';
+import { Pagination } from '../../components/ui/pagination';
+import { SortableTable, SortableColumn, SortDirection } from '../../components/ui/sortable-table';
 
 interface AffiliateStat {
   id: string;
@@ -30,6 +32,12 @@ export function AffiliatesPage() {
   const [endDate, setEndDate] = useState(() => {
     return new Date().toISOString().split('T')[0];
   });
+
+  // Pagination and sorting states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [sortKey, setSortKey] = useState<string>('');
+  const [sortDirection, setSortDirection] = useState<SortDirection>(null);
 
   useEffect(() => {
     fetchAffiliates();
@@ -65,12 +73,75 @@ export function AffiliatesPage() {
     }
   };
 
-  const filteredAffiliates = affiliates.filter(affiliate =>
-    affiliate.affiliate?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (affiliate.offer && affiliate.offer.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  // Define table columns
+  const columns: SortableColumn[] = [
+    { key: 'name', label: 'Affiliate', sortable: true },
+    { key: 'offer', label: 'Top Offer', sortable: true },
+    { key: 'clicks', label: 'Clicks', sortable: true, className: 'text-right' },
+    { key: 'conversions', label: 'Conversions', sortable: true, className: 'text-right' },
+    { key: 'conversion_rate', label: 'Conv. Rate', sortable: true, className: 'text-right' },
+    { key: 'revenue', label: 'Revenue', sortable: true, className: 'text-right' },
+    { key: 'payout', label: 'Payout', sortable: true, className: 'text-right' },
+    { key: 'profit', label: 'Profit', sortable: true, className: 'text-right' }
+  ];
 
-  const totalStats = filteredAffiliates.reduce(
+  // Handle sorting
+  const handleSort = (key: string) => {
+    if (sortKey === key) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : sortDirection === 'desc' ? null : 'asc');
+    } else {
+      setSortKey(key);
+      setSortDirection('asc');
+    }
+  };
+
+  // Filter and sort data
+  const filteredAndSortedAffiliates = useMemo(() => {
+    let filtered = affiliates.filter(affiliate =>
+      affiliate.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (affiliate.affiliate && affiliate.affiliate.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (affiliate.offer && affiliate.offer.toLowerCase().includes(searchTerm.toLowerCase()))
+    );
+
+    if (sortKey && sortDirection) {
+      filtered.sort((a, b) => {
+        const aValue = a[sortKey as keyof AffiliateStat];
+        const bValue = b[sortKey as keyof AffiliateStat];
+        
+        if (typeof aValue === 'string' && typeof bValue === 'string') {
+          return sortDirection === 'asc' 
+            ? aValue.localeCompare(bValue)
+            : bValue.localeCompare(aValue);
+        }
+        
+        if (typeof aValue === 'number' && typeof bValue === 'number') {
+          return sortDirection === 'asc' 
+            ? aValue - bValue
+            : bValue - aValue;
+        }
+        
+        return 0;
+      });
+    }
+
+    return filtered;
+  }, [affiliates, searchTerm, sortKey, sortDirection]);
+
+  // Paginate data
+  const paginatedAffiliates = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    return filteredAndSortedAffiliates.slice(startIndex, endIndex);
+  }, [filteredAndSortedAffiliates, currentPage, itemsPerPage]);
+
+  const totalPages = Math.ceil(filteredAndSortedAffiliates.length / itemsPerPage);
+
+  // Reset to first page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, startDate, endDate]);
+
+  const totalStats = filteredAndSortedAffiliates.reduce(
     (acc, affiliate) => ({
       clicks: acc.clicks + affiliate.clicks,
       conversions: acc.conversions + affiliate.conversions,
@@ -81,42 +152,31 @@ export function AffiliatesPage() {
   );
 
   // Group affiliates by performance tier
-  const topPerformers = filteredAffiliates
+  const topPerformers = filteredAndSortedAffiliates
     .sort((a, b) => b.profit - a.profit)
     .slice(0, 5);
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-3xl font-bold text-gray-900 flex items-center">
-            <Users className="mr-3 h-8 w-8 text-blue-600" />
-            Affiliés
-          </h2>
-          <p className="text-gray-600 mt-2">Suivi des performances de votre réseau d'affiliés</p>
-        </div>
-        <Button className="flex items-center">
-          <Download className="mr-2 h-4 w-4" />
-          Exporter
-        </Button>
-      </div>
+    <div className="space-y-6 min-h-[800px]">
 
       {/* Filters */}
       <Card>
         <CardContent className="p-6">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <Input
-                placeholder="Rechercher un affilié..."
-                value={searchTerm}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchTerm(e.target.value)}
-                className="pl-10"
-              />
+            <div className="flex flex-col">
+              <label className="text-sm font-medium text-foreground mb-1 block">Search</label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search affiliates..."
+                  value={searchTerm}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchTerm(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
             </div>
             <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Date de début</label>
+              <label className="text-sm font-medium text-foreground mb-1 block">Start Date</label>
               <Input
                 type="date"
                 value={startDate}
@@ -124,17 +184,18 @@ export function AffiliatesPage() {
               />
             </div>
             <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Date de fin</label>
+              <label className="text-sm font-medium text-foreground mb-1 block">End Date</label>
               <Input
                 type="date"
                 value={endDate}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEndDate(e.target.value)}
               />
             </div>
-            <div className="flex items-end">
+            <div className="flex flex-col">
+              <label className="text-sm font-medium text-foreground mb-1 block">Actions</label>
               <Button onClick={fetchAffiliates} className="w-full">
                 <Filter className="mr-2 h-4 w-4" />
-                Filtrer
+                Filter
               </Button>
             </div>
           </div>
@@ -146,32 +207,32 @@ export function AffiliatesPage() {
         <Card>
           <CardContent className="p-6">
             <div className="text-center">
-              <p className="text-sm font-medium text-gray-600">Affiliés Actifs</p>
-              <p className="text-2xl font-bold text-blue-600">{filteredAffiliates.length}</p>
+              <p className="text-sm font-medium text-muted-foreground">Active Affiliates</p>
+              <p className="text-2xl font-bold text-chart-1">{filteredAndSortedAffiliates.length}</p>
             </div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-6">
             <div className="text-center">
-              <p className="text-sm font-medium text-gray-600">Total Conversions</p>
-              <p className="text-2xl font-bold text-green-600">{totalStats.conversions.toLocaleString()}</p>
+              <p className="text-sm font-medium text-muted-foreground">Total Conversions</p>
+              <p className="text-2xl font-bold text-chart-2">{totalStats.conversions.toLocaleString()}</p>
             </div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-6">
             <div className="text-center">
-              <p className="text-sm font-medium text-gray-600">Revenus Générés</p>
-              <p className="text-2xl font-bold text-purple-600">${totalStats.revenue.toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</p>
+              <p className="text-sm font-medium text-muted-foreground">Revenue Generated</p>
+              <p className="text-2xl font-bold text-chart-3">${totalStats.revenue.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
             </div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-6">
             <div className="text-center">
-              <p className="text-sm font-medium text-gray-600">Profit Net</p>
-              <p className="text-2xl font-bold text-orange-600">${totalStats.profit.toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</p>
+              <p className="text-sm font-medium text-muted-foreground">Net Profit</p>
+              <p className="text-2xl font-bold text-chart-4">${totalStats.profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
             </div>
           </CardContent>
         </Card>
@@ -197,7 +258,7 @@ export function AffiliatesPage() {
                       {index + 1}
                     </div>
                     <div>
-                      <div className="font-medium text-gray-900">{affiliate.affiliate}</div>
+                      <div className="font-medium text-gray-900">{affiliate.name || affiliate.affiliate}</div>
                       <div className="text-sm text-gray-600">{affiliate.conversions} conversions</div>
                     </div>
                   </div>
@@ -213,26 +274,26 @@ export function AffiliatesPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Répartition des Performances</CardTitle>
+            <CardTitle>Performance Distribution</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-600">Excellent (&gt;3% conv.)</span>
+                <span className="text-sm text-muted-foreground">Excellent (&gt;3% conv.)</span>
                 <span className="font-medium">
-                  {filteredAffiliates.filter(a => a.conversion_rate > 3).length} affiliés
+                  {filteredAndSortedAffiliates.filter(a => a.conversion_rate > 3).length} affiliates
                 </span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-600">Bon (1-3% conv.)</span>
+                <span className="text-sm text-muted-foreground">Good (1-3% conv.)</span>
                 <span className="font-medium">
-                  {filteredAffiliates.filter(a => a.conversion_rate >= 1 && a.conversion_rate <= 3).length} affiliés
+                  {filteredAndSortedAffiliates.filter(a => a.conversion_rate >= 1 && a.conversion_rate <= 3).length} affiliates
                 </span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-600">À améliorer (&lt;1% conv.)</span>
-                <span className="font-medium text-orange-600">
-                  {filteredAffiliates.filter(a => a.conversion_rate < 1).length} affiliés
+                <span className="text-sm text-muted-foreground">Needs improvement (&lt;1% conv.)</span>
+                <span className="font-medium text-destructive">
+                  {filteredAndSortedAffiliates.filter(a => a.conversion_rate < 1).length} affiliates
                 </span>
               </div>
             </div>
@@ -243,76 +304,71 @@ export function AffiliatesPage() {
       {/* Data Table */}
       <Card>
         <CardHeader>
-          <CardTitle>Performances Détaillées ({filteredAffiliates.length} affiliés)</CardTitle>
+          <CardTitle>Detailed Performance ({filteredAndSortedAffiliates.length} affiliates)</CardTitle>
         </CardHeader>
         <CardContent>
           {isLoading ? (
             <div className="flex justify-center py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-gray-200">
-                    <th className="text-left py-3 px-4 font-medium text-gray-600">Affilié</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-600">Offre</th>
-                    <th className="text-right py-3 px-4 font-medium text-gray-600">Clics</th>
-                    <th className="text-right py-3 px-4 font-medium text-gray-600">Conversions</th>
-                    <th className="text-right py-3 px-4 font-medium text-gray-600">Taux Conv.</th>
-                    <th className="text-right py-3 px-4 font-medium text-gray-600">Revenus</th>
-                    <th className="text-right py-3 px-4 font-medium text-gray-600">Commissions</th>
-                    <th className="text-right py-3 px-4 font-medium text-gray-600">Profit</th>
-                    <th className="text-center py-3 px-4 font-medium text-gray-600">Statut</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredAffiliates.map((affiliate) => (
-                    <tr key={affiliate.id} className="border-b border-gray-100 hover:bg-gray-50">
-                      <td className="py-3 px-4">
-                        <div className="font-medium text-gray-900">{affiliate.affiliate || 'Affilié Inconnu'}</div>
-                      </td>
-                      <td className="py-3 px-4 text-gray-600">{affiliate.offer || '-'}</td>
-                      <td className="py-3 px-4 text-right">{affiliate.clicks.toLocaleString()}</td>
-                      <td className="py-3 px-4 text-right">{affiliate.conversions.toLocaleString()}</td>
-                      <td className="py-3 px-4 text-right">
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          affiliate.conversion_rate >= 3 
-                            ? 'bg-green-100 text-green-800' 
-                            : affiliate.conversion_rate >= 1 
-                            ? 'bg-yellow-100 text-yellow-800' 
-                            : 'bg-red-100 text-red-800'
-                        }`}>
-                          {affiliate.conversion_rate.toFixed(2)}%
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-right">${affiliate.revenue.toFixed(2)}</td>
-                      <td className="py-3 px-4 text-right">${affiliate.payout.toFixed(2)}</td>
-                      <td className="py-3 px-4 text-right">
-                        <span className={`font-medium ${affiliate.profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                          ${affiliate.profit.toFixed(2)}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-center">
-                        {affiliate.conversion_rate >= 3 ? (
-                          <TrendingUp className="h-4 w-4 text-green-600 mx-auto" />
-                        ) : affiliate.conversion_rate < 1 ? (
-                          <TrendingDown className="h-4 w-4 text-red-600 mx-auto" />
-                        ) : (
-                          <span className="w-4 h-4 bg-yellow-400 rounded-full mx-auto block"></span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <>
+              <SortableTable
+                columns={columns}
+                data={paginatedAffiliates}
+                sortKey={sortKey}
+                sortDirection={sortDirection}
+                onSort={handleSort}
+              >
+                {(affiliate) => (
+                  <>
+                    <td className="py-3 px-4">
+                      <div className="font-medium text-foreground">{affiliate.name || affiliate.affiliate || 'Unknown Affiliate'}</div>
+                    </td>
+                    <td className="py-3 px-4 text-muted-foreground">{affiliate.offer || '-'}</td>
+                    <td className="py-3 px-4 text-right">{affiliate.clicks.toLocaleString()}</td>
+                    <td className="py-3 px-4 text-right">{affiliate.conversions.toLocaleString()}</td>
+                    <td className="py-3 px-4 text-right">
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        affiliate.conversion_rate >= 3 
+                          ? 'bg-chart-1/20 text-chart-1' 
+                          : affiliate.conversion_rate >= 1 
+                          ? 'bg-chart-3/20 text-chart-3' 
+                          : 'bg-destructive/20 text-destructive'
+                      }`}>
+                        {affiliate.conversion_rate.toFixed(2)}%
+                      </span>
+                    </td>
+                    <td className="py-3 px-4 text-right">${affiliate.revenue.toFixed(2)}</td>
+                    <td className="py-3 px-4 text-right">${affiliate.payout.toFixed(2)}</td>
+                    <td className="py-3 px-4 text-right">
+                      <span className={`font-medium ${affiliate.profit >= 0 ? 'text-chart-1' : 'text-destructive'}`}>
+                        ${affiliate.profit.toFixed(2)}
+                      </span>
+                    </td>
+                  </>
+                )}
+              </SortableTable>
               
-              {filteredAffiliates.length === 0 && !isLoading && (
-                <div className="text-center py-8 text-gray-500">
-                  Aucun affilié trouvé pour cette période
+              {filteredAndSortedAffiliates.length === 0 && !isLoading && (
+                <div className="text-center py-8 text-muted-foreground">
+                  No affiliates found for this period
                 </div>
               )}
-            </div>
+
+              {filteredAndSortedAffiliates.length > 0 && (
+                <div className="mt-4">
+                  <Pagination
+                    currentPage={currentPage}
+                    totalPages={totalPages}
+                    onPageChange={setCurrentPage}
+                    itemsPerPage={itemsPerPage}
+                    totalItems={filteredAndSortedAffiliates.length}
+                    onItemsPerPageChange={setItemsPerPage}
+                  />
+                </div>
+              )}
+            </>
           )}
         </CardContent>
       </Card>

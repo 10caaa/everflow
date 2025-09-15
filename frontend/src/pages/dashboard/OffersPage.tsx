@@ -1,9 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
-import { Gift, Search, Filter, Download } from 'lucide-react';
+import { Gift, Search, Filter } from 'lucide-react';
 import { profitService } from '../../services/api';
+import { Pagination } from '../../components/ui/pagination';
+import { SortableTable, SortableColumn, SortDirection } from '../../components/ui/sortable-table';
 
 interface OfferStat {
   id: string;
@@ -29,6 +31,12 @@ export function OffersPage() {
   const [endDate, setEndDate] = useState(() => {
     return new Date().toISOString().split('T')[0];
   });
+
+  // Pagination and sorting states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [sortKey, setSortKey] = useState<string>('');
+  const [sortDirection, setSortDirection] = useState<SortDirection>(null);
 
   useEffect(() => {
     fetchOffers();
@@ -63,12 +71,74 @@ export function OffersPage() {
     }
   };
 
-  const filteredOffers = offers.filter(offer =>
-    offer.offer.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (offer.affiliate && offer.affiliate.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  // Define table columns
+  const columns: SortableColumn[] = [
+    { key: 'offer', label: 'Offer', sortable: true },
+    { key: 'affiliate', label: 'Affiliate', sortable: true },
+    { key: 'clicks', label: 'Clicks', sortable: true, className: 'text-right' },
+    { key: 'conversions', label: 'Conversions', sortable: true, className: 'text-right' },
+    { key: 'conversion_rate', label: 'Conv. Rate', sortable: true, className: 'text-right' },
+    { key: 'revenue', label: 'Revenue', sortable: true, className: 'text-right' },
+    { key: 'payout', label: 'Costs', sortable: true, className: 'text-right' },
+    { key: 'profit', label: 'Profit', sortable: true, className: 'text-right' }
+  ];
 
-  const totalStats = filteredOffers.reduce(
+  // Handle sorting
+  const handleSort = (key: string) => {
+    if (sortKey === key) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : sortDirection === 'desc' ? null : 'asc');
+    } else {
+      setSortKey(key);
+      setSortDirection('asc');
+    }
+  };
+
+  // Filter and sort data
+  const filteredAndSortedOffers = useMemo(() => {
+    let filtered = offers.filter(offer =>
+      offer.offer.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (offer.affiliate && offer.affiliate.toLowerCase().includes(searchTerm.toLowerCase()))
+    );
+
+    if (sortKey && sortDirection) {
+      filtered.sort((a, b) => {
+        const aValue = a[sortKey as keyof OfferStat];
+        const bValue = b[sortKey as keyof OfferStat];
+        
+        if (typeof aValue === 'string' && typeof bValue === 'string') {
+          return sortDirection === 'asc' 
+            ? aValue.localeCompare(bValue)
+            : bValue.localeCompare(aValue);
+        }
+        
+        if (typeof aValue === 'number' && typeof bValue === 'number') {
+          return sortDirection === 'asc' 
+            ? aValue - bValue
+            : bValue - aValue;
+        }
+        
+        return 0;
+      });
+    }
+
+    return filtered;
+  }, [offers, searchTerm, sortKey, sortDirection]);
+
+  // Paginate data
+  const paginatedOffers = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    return filteredAndSortedOffers.slice(startIndex, endIndex);
+  }, [filteredAndSortedOffers, currentPage, itemsPerPage]);
+
+  const totalPages = Math.ceil(filteredAndSortedOffers.length / itemsPerPage);
+
+  // Reset to first page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, startDate, endDate]);
+
+  const totalStats = filteredAndSortedOffers.reduce(
     (acc, offer) => ({
       clicks: acc.clicks + offer.clicks,
       conversions: acc.conversions + offer.conversions,
@@ -79,37 +149,26 @@ export function OffersPage() {
   );
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-3xl font-bold text-gray-900 flex items-center">
-            <Gift className="mr-3 h-8 w-8 text-blue-600" />
-            Offres
-          </h2>
-          <p className="text-gray-600 mt-2">Gestion et analyse des performances de vos offres</p>
-        </div>
-        <Button className="flex items-center">
-          <Download className="mr-2 h-4 w-4" />
-          Exporter
-        </Button>
-      </div>
+    <div className="space-y-6 min-h-[800px]">
 
       {/* Filters */}
       <Card>
         <CardContent className="p-6">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <Input
-                placeholder="Rechercher une offre..."
-                value={searchTerm}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchTerm(e.target.value)}
-                className="pl-10"
-              />
+            <div className="flex flex-col">
+              <label className="text-sm font-medium text-foreground mb-1 block">Search</label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search offers..."
+                  value={searchTerm}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchTerm(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
             </div>
             <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Date de début</label>
+              <label className="text-sm font-medium text-foreground mb-1 block">Start Date</label>
               <Input
                 type="date"
                 value={startDate}
@@ -117,17 +176,18 @@ export function OffersPage() {
               />
             </div>
             <div>
-              <label className="text-sm font-medium text-gray-700 mb-1 block">Date de fin</label>
+              <label className="text-sm font-medium text-foreground mb-1 block">End Date</label>
               <Input
                 type="date"
                 value={endDate}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEndDate(e.target.value)}
               />
             </div>
-            <div className="flex items-end">
+            <div className="flex flex-col">
+              <label className="text-sm font-medium text-foreground mb-1 block">Actions</label>
               <Button onClick={fetchOffers} className="w-full">
                 <Filter className="mr-2 h-4 w-4" />
-                Filtrer
+                Filter
               </Button>
             </div>
           </div>
@@ -139,32 +199,32 @@ export function OffersPage() {
         <Card>
           <CardContent className="p-6">
             <div className="text-center">
-              <p className="text-sm font-medium text-gray-600">Total Clics</p>
-              <p className="text-2xl font-bold text-blue-600">{totalStats.clicks.toLocaleString()}</p>
+              <p className="text-sm font-medium text-muted-foreground">Total Clicks</p>
+              <p className="text-2xl font-bold text-chart-1">{totalStats.clicks.toLocaleString()}</p>
             </div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-6">
             <div className="text-center">
-              <p className="text-sm font-medium text-gray-600">Conversions</p>
-              <p className="text-2xl font-bold text-green-600">{totalStats.conversions.toLocaleString()}</p>
+              <p className="text-sm font-medium text-muted-foreground">Conversions</p>
+              <p className="text-2xl font-bold text-chart-2">{totalStats.conversions.toLocaleString()}</p>
             </div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-6">
             <div className="text-center">
-              <p className="text-sm font-medium text-gray-600">Chiffre d'affaires</p>
-              <p className="text-2xl font-bold text-purple-600">${totalStats.revenue.toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</p>
+              <p className="text-sm font-medium text-muted-foreground">Revenue</p>
+              <p className="text-2xl font-bold text-chart-3">${totalStats.revenue.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
             </div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-6">
             <div className="text-center">
-              <p className="text-sm font-medium text-gray-600">Profit Total</p>
-              <p className="text-2xl font-bold text-orange-600">${totalStats.profit.toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</p>
+              <p className="text-sm font-medium text-muted-foreground">Total Profit</p>
+              <p className="text-2xl font-bold text-chart-4">${totalStats.profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
             </div>
           </CardContent>
         </Card>
@@ -173,66 +233,71 @@ export function OffersPage() {
       {/* Data Table */}
       <Card>
         <CardHeader>
-          <CardTitle>Performances par Offre ({filteredOffers.length} résultats)</CardTitle>
+          <CardTitle>Offer Performance ({filteredAndSortedOffers.length} results)</CardTitle>
         </CardHeader>
         <CardContent>
           {isLoading ? (
             <div className="flex justify-center py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-gray-200">
-                    <th className="text-left py-3 px-4 font-medium text-gray-600">Offre</th>
-                    <th className="text-left py-3 px-4 font-medium text-gray-600">Affilié</th>
-                    <th className="text-right py-3 px-4 font-medium text-gray-600">Clics</th>
-                    <th className="text-right py-3 px-4 font-medium text-gray-600">Conversions</th>
-                    <th className="text-right py-3 px-4 font-medium text-gray-600">Taux Conv.</th>
-                    <th className="text-right py-3 px-4 font-medium text-gray-600">Revenus</th>
-                    <th className="text-right py-3 px-4 font-medium text-gray-600">Coûts</th>
-                    <th className="text-right py-3 px-4 font-medium text-gray-600">Profit</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredOffers.map((offer) => (
-                    <tr key={offer.id} className="border-b border-gray-100 hover:bg-gray-50">
-                      <td className="py-3 px-4">
-                        <div className="font-medium text-gray-900">{offer.offer}</div>
-                      </td>
-                      <td className="py-3 px-4 text-gray-600">{offer.affiliate || '-'}</td>
-                      <td className="py-3 px-4 text-right">{offer.clicks.toLocaleString()}</td>
-                      <td className="py-3 px-4 text-right">{offer.conversions.toLocaleString()}</td>
-                      <td className="py-3 px-4 text-right">
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          offer.conversion_rate >= 2 
-                            ? 'bg-green-100 text-green-800' 
-                            : offer.conversion_rate >= 1 
-                            ? 'bg-yellow-100 text-yellow-800' 
-                            : 'bg-red-100 text-red-800'
-                        }`}>
-                          {offer.conversion_rate.toFixed(2)}%
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-right">${offer.revenue.toFixed(2)}</td>
-                      <td className="py-3 px-4 text-right">${offer.payout.toFixed(2)}</td>
-                      <td className="py-3 px-4 text-right">
-                        <span className={`font-medium ${offer.profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                          ${offer.profit.toFixed(2)}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <>
+              <SortableTable
+                columns={columns}
+                data={paginatedOffers}
+                sortKey={sortKey}
+                sortDirection={sortDirection}
+                onSort={handleSort}
+              >
+                {(offer) => (
+                  <>
+                    <td className="py-3 px-4">
+                      <div className="font-medium text-foreground">{offer.offer}</div>
+                    </td>
+                    <td className="py-3 px-4 text-muted-foreground">{offer.affiliate || '-'}</td>
+                    <td className="py-3 px-4 text-right">{offer.clicks.toLocaleString()}</td>
+                    <td className="py-3 px-4 text-right">{offer.conversions.toLocaleString()}</td>
+                    <td className="py-3 px-4 text-right">
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        offer.conversion_rate >= 2 
+                          ? 'bg-chart-1/20 text-chart-1' 
+                          : offer.conversion_rate >= 1 
+                          ? 'bg-chart-3/20 text-chart-3' 
+                          : 'bg-destructive/20 text-destructive'
+                      }`}>
+                        {offer.conversion_rate.toFixed(2)}%
+                      </span>
+                    </td>
+                    <td className="py-3 px-4 text-right">${offer.revenue.toFixed(2)}</td>
+                    <td className="py-3 px-4 text-right">${offer.payout.toFixed(2)}</td>
+                    <td className="py-3 px-4 text-right">
+                      <span className={`font-medium ${offer.profit >= 0 ? 'text-chart-1' : 'text-destructive'}`}>
+                        ${offer.profit.toFixed(2)}
+                      </span>
+                    </td>
+                  </>
+                )}
+              </SortableTable>
               
-              {filteredOffers.length === 0 && !isLoading && (
-                <div className="text-center py-8 text-gray-500">
-                  Aucune offre trouvée pour cette période
+              {filteredAndSortedOffers.length === 0 && !isLoading && (
+                <div className="text-center py-8 text-muted-foreground">
+                  No offers found for this period
                 </div>
               )}
-            </div>
+
+              {filteredAndSortedOffers.length > 0 && (
+                <div className="mt-4">
+                  <Pagination
+                    currentPage={currentPage}
+                    totalPages={totalPages}
+                    onPageChange={setCurrentPage}
+                    itemsPerPage={itemsPerPage}
+                    totalItems={filteredAndSortedOffers.length}
+                    onItemsPerPageChange={setItemsPerPage}
+                  />
+                </div>
+              )}
+            </>
           )}
         </CardContent>
       </Card>

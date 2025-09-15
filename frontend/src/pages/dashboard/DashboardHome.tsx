@@ -1,194 +1,314 @@
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
-import { TrendingUp, DollarSign, MousePointer, Target, Users } from 'lucide-react';
-import { profitService } from '../../services/api';
-
-interface DashboardStats {
-  totalProfit: number;
-  totalClicks: number;
-  totalConversions: number;
-  conversionRate: number;
-  offersCount: number;
-  affiliatesCount: number;
-}
+import { Button } from '../../components/ui/button';
+import { ChartLineInteractive } from '../../components/charts/ChartLineInteractive';
+import { DateRangePicker } from '../../components/ui/date-range-picker';
+import { DollarSign, MousePointer, Target, TrendingUp, BarChart3, PieChart, Users, Settings, FileText, Download, Activity, Zap } from 'lucide-react';
+import { profitService, type DashboardStats, type DateRange } from '../../services/api';
 
 export function DashboardHome() {
-  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [dashboardData, setDashboardData] = useState<DashboardStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [selectedKPI, setSelectedKPI] = useState<string>('profit');
+  const [dateRange, setDateRange] = useState<DateRange>(() => {
+    // Période par défaut (7 derniers jours)
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - 7);
+    
+    return {
+      start_date: startDate.toISOString().split('T')[0],
+      end_date: endDate.toISOString().split('T')[0]
+    };
+  });
 
-  useEffect(() => {
-    const fetchDashboardData = async () => {
-      try {
-        const endDate = new Date().toISOString().split('T')[0];
-        const startDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-        
-        // Fetch data from multiple endpoints
-        const [offersData, affiliatesData] = await Promise.all([
-          profitService.getOfferStats({ start_date: startDate, end_date: endDate }),
-          profitService.getAffiliateStats({ start_date: startDate, end_date: endDate }),
-        ]);
 
-        const totalProfit = (offersData.total_profit || 0) + (affiliatesData.total_profit || 0);
-        const totalClicks = (offersData.total_clicks || 0) + (affiliatesData.total_clicks || 0);
-        const totalConversions = (offersData.total_conversions || 0) + (affiliatesData.total_conversions || 0);
-        
-        setStats({
-          totalProfit,
-          totalClicks,
-          totalConversions,
-          conversionRate: totalClicks > 0 ? (totalConversions / totalClicks) * 100 : 0,
-          offersCount: offersData.count || 0,
-          affiliatesCount: affiliatesData.count || 0,
-        });
-      } catch (error) {
-        console.error('Erreur lors du chargement du dashboard:', error);
+
+  const fetchDashboardData = async (range: DateRange) => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      const data = await profitService.getDashboardStats(range);
+      setDashboardData(data);
+    } catch (err) {
+      console.error('Erreur lors du chargement des données dashboard:', err);
+      setError('Erreur lors du chargement des données');
       } finally {
         setIsLoading(false);
       }
     };
 
-    fetchDashboardData();
-  }, []);
+  useEffect(() => {
+    fetchDashboardData(dateRange);
+  }, [dateRange]);
+
+  const handleDateRangeChange = (startDate: string, endDate: string) => {
+    setDateRange({ start_date: startDate, end_date: endDate });
+  };
+
 
   if (isLoading) {
     return (
-      <div className="space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {[...Array(6)].map((_, i) => (
-            <div key={i} className="h-32 bg-white rounded-lg shadow animate-pulse"></div>
-          ))}
+      <div className="w-full h-full flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Chargement des données...</p>
         </div>
       </div>
     );
   }
 
-  const statCards = [
-    {
-      title: 'Profit Total',
-      value: `$${stats?.totalProfit.toLocaleString('fr-FR', { minimumFractionDigits: 2 }) || '0.00'}`,
-      icon: DollarSign,
-      color: 'text-green-600',
-      bgColor: 'bg-green-50',
-    },
-    {
-      title: 'Clics Total',
-      value: stats?.totalClicks.toLocaleString('fr-FR') || '0',
-      icon: MousePointer,
-      color: 'text-blue-600',
-      bgColor: 'bg-blue-50',
-    },
-    {
-      title: 'Conversions',
-      value: stats?.totalConversions.toLocaleString('fr-FR') || '0',
-      icon: Target,
-      color: 'text-purple-600',
-      bgColor: 'bg-purple-50',
-    },
-    {
-      title: 'Taux de Conversion',
-      value: `${stats?.conversionRate.toFixed(2) || '0.00'}%`,
-      icon: TrendingUp,
-      color: 'text-orange-600',
-      bgColor: 'bg-orange-50',
-    },
-    {
-      title: 'Offres Actives',
-      value: stats?.offersCount.toString() || '0',
-      icon: Target,
-      color: 'text-indigo-600',
-      bgColor: 'bg-indigo-50',
-    },
-    {
-      title: 'Affiliés Actifs',
-      value: stats?.affiliatesCount.toString() || '0',
-      icon: Users,
-      color: 'text-teal-600',
-      bgColor: 'bg-teal-50',
-    },
-  ];
+  if (error) {
+    return (
+      <div className="w-full h-full flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-destructive mb-4">⚠️</div>
+          <p className="text-destructive mb-2">{error}</p>
+          <Button onClick={() => window.location.reload()}>
+            Réessayer
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!dashboardData) {
+    return (
+      <div className="w-full h-full flex items-center justify-center">
+        <p className="text-muted-foreground">Aucune donnée disponible</p>
+      </div>
+    );
+  }
+
+  const { summary, top_performers, data_sources } = dashboardData;
+
 
   return (
-    <div className="space-y-6">
-      {/* Page Header */}
-      <div>
-        <h2 className="text-3xl font-bold text-gray-900">Vue d'ensemble</h2>
-        <p className="text-gray-600 mt-2">Performance des 7 derniers jours</p>
+    <div className="w-full h-full flex flex-col space-y-4">
+      {/* Date Range Filter */}
+      <div className="flex-shrink-0">
+        <DateRangePicker
+          startDate={dateRange.start_date}
+          endDate={dateRange.end_date}
+          onDateChange={handleDateRangeChange}
+          isLoading={isLoading}
+        />
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {statCards.map((stat, index) => (
-          <Card key={index} className="hover:shadow-lg transition-shadow">
-            <CardContent className="p-6">
+      {/* Dashboard Grid */}
+      <div className="flex-1 min-h-0">
+        <div className="parent h-full">
+        {/* KPI Cards 1-6 */}
+        <div className="div1">
+          <Card 
+            className={`h-full cursor-pointer transition-all duration-200 hover:shadow-md ${
+              selectedKPI === 'profit' ? 'ring-2 ring-primary shadow-md' : ''
+            }`}
+            onClick={() => setSelectedKPI('profit')}
+          >
+            <CardContent className="p-3 h-full flex flex-col justify-center">
               <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">{stat.title}</p>
-                  <p className="text-2xl font-bold text-gray-900 mt-2">{stat.value}</p>
+      <div>
+                  <p className="text-xs font-medium text-muted-foreground">Total Profit</p>
+                  <p className="text-lg font-bold text-foreground">${summary.total_profit.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
                 </div>
-                <div className={`p-3 rounded-full ${stat.bgColor}`}>
-                  <stat.icon className={`h-6 w-6 ${stat.color}`} />
+                <div className="p-1.5 rounded-lg bg-chart-1/10">
+                  <DollarSign className="h-4 w-4 text-chart-1" />
                 </div>
               </div>
             </CardContent>
           </Card>
-        ))}
       </div>
 
-      {/* Quick Actions */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle>Actions Rapides</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 gap-4">
-              <button className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 text-left">
-                <div className="font-medium">Voir les Offres</div>
-                <div className="text-sm text-gray-600">Gérer vos offres actives</div>
-              </button>
-              <button className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 text-left">
-                <div className="font-medium">Affiliés</div>
-                <div className="text-sm text-gray-600">Suivre les performances</div>
-              </button>
-              <button className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 text-left">
-                <div className="font-medium">Rapports</div>
-                <div className="text-sm text-gray-600">Analyser les données</div>
-              </button>
-              <button className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 text-left">
-                <div className="font-medium">Paramètres</div>
-                <div className="text-sm text-gray-600">Configuration</div>
-              </button>
-            </div>
-          </CardContent>
-        </Card>
+        <div className="div2">
+          <Card 
+            className={`h-full cursor-pointer transition-all duration-200 hover:shadow-md ${
+              selectedKPI === 'clicks' ? 'ring-2 ring-primary shadow-md' : ''
+            }`}
+            onClick={() => setSelectedKPI('clicks')}
+          >
+            <CardContent className="p-3 h-full flex flex-col justify-center">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground">Clicks</p>
+                  <p className="text-lg font-bold text-foreground">{summary.total_clicks.toLocaleString()}</p>
+                </div>
+                <div className="p-1.5 rounded-lg bg-chart-2/10">
+                  <MousePointer className="h-4 w-4 text-chart-2" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+      </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Statut Système</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
+        <div className="div3">
+          <Card 
+            className={`h-full cursor-pointer transition-all duration-200 hover:shadow-md ${
+              selectedKPI === 'conversions' ? 'ring-2 ring-primary shadow-md' : ''
+            }`}
+            onClick={() => setSelectedKPI('conversions')}
+          >
+            <CardContent className="p-3 h-full flex flex-col justify-center">
               <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-600">API Everflow</span>
-                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                  Connecté
-                </span>
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground">Conversions</p>
+                  <p className="text-lg font-bold text-foreground">{summary.total_conversions.toLocaleString()}</p>
+                </div>
+                <div className="p-1.5 rounded-lg bg-chart-3/10">
+                  <Target className="h-4 w-4 text-chart-3" />
+                </div>
+            </div>
+          </CardContent>
+        </Card>
+        </div>
+        
+        <div className="div4">
+          <Card 
+            className={`h-full cursor-pointer transition-all duration-200 hover:shadow-md ${
+              selectedKPI === 'conversion_rate' ? 'ring-2 ring-primary shadow-md' : ''
+            }`}
+            onClick={() => setSelectedKPI('conversion_rate')}
+          >
+            <CardContent className="p-3 h-full flex flex-col justify-center">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground">Conversion Rate</p>
+                  <p className="text-lg font-bold text-foreground">{summary.conversion_rate.toFixed(2)}%</p>
+                </div>
+                <div className="p-1.5 rounded-lg bg-chart-4/10">
+                  <TrendingUp className="h-4 w-4 text-chart-4" />
+                </div>
               </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-600">Base de données</span>
-                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                  Opérationnel
-                </span>
+            </CardContent>
+          </Card>
               </div>
+
+        {/* New KPI Cards 5-6 */}
+        <div className="div5">
+          <Card 
+            className={`h-full cursor-pointer transition-all duration-200 hover:shadow-md ${
+              selectedKPI === 'revenue' ? 'ring-2 ring-primary shadow-md' : ''
+            }`}
+            onClick={() => setSelectedKPI('revenue')}
+          >
+            <CardContent className="p-3 h-full flex flex-col justify-center">
               <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-600">Synchronisation</span>
-                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                  En cours
-                </span>
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground">Total Revenue</p>
+                  <p className="text-lg font-bold text-foreground">${summary.total_revenue.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                </div>
+                <div className="p-1.5 rounded-lg bg-chart-5/10">
+                  <Activity className="h-4 w-4 text-chart-5" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+              </div>
+
+        <div className="div6">
+          <Card 
+            className={`h-full cursor-pointer transition-all duration-200 hover:shadow-md ${
+              selectedKPI === 'performance' ? 'ring-2 ring-primary shadow-md' : ''
+            }`}
+            onClick={() => setSelectedKPI('performance')}
+          >
+            <CardContent className="p-3 h-full flex flex-col justify-center">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground">Performance Score</p>
+                  <p className="text-lg font-bold text-foreground">{Math.round((summary.conversion_rate * summary.total_profit) / 100)}</p>
+                </div>
+                <div className="p-1.5 rounded-lg bg-primary/10">
+                  <Zap className="h-4 w-4 text-primary" />
               </div>
             </div>
           </CardContent>
         </Card>
+        </div>
+
+        {/* Chart 7 - Main Chart */}
+        <div className="div7">
+          <ChartLineInteractive 
+            selectedKPI={selectedKPI} 
+            dashboardData={dashboardData} 
+            dateRange={dateRange}
+          />
+        </div>
+
+        {/* Chart 8 - Top Offers */}
+        <div className="div8">
+          <Card className="h-full">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-semibold text-gray-900">Top Offers</CardTitle>
+            </CardHeader>
+            <CardContent className="h-full flex flex-col p-3 pb-8">
+              <div className="flex-1 space-y-2">
+                {top_performers.offers.slice(0, 3).map((offer, index) => (
+                  <div key={offer.id} className="flex items-center justify-between p-2 rounded-md hover:bg-gray-50 transition-colors">
+                    <div className="flex items-center space-x-3">
+                      <div className="w-5 h-5 rounded-full bg-gray-100 text-gray-600 text-xs flex items-center justify-center font-medium">
+                        {index + 1}
+                      </div>
+                      <div className="flex flex-col min-w-0">
+                        <span className="text-sm font-medium text-gray-900 truncate">
+                          {offer.offer}
+                        </span>
+                        <span className="text-xs text-gray-500">
+                          {offer.clicks?.toLocaleString() || 0} clicks
+                        </span>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-sm font-semibold text-gray-900">
+                        ${offer.profit.toFixed(2)}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Chart 9 - Top Affiliates */}
+        <div className="div9">
+          <Card className="h-full">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-semibold text-gray-900">Top Affiliates</CardTitle>
+            </CardHeader>
+            <CardContent className="h-full flex flex-col p-3 pb-8">
+              <div className="flex-1 space-y-2">
+                {top_performers.affiliates.slice(0, 3).map((affiliate, index) => (
+                  <div key={affiliate.id} className="flex items-center justify-between p-2 rounded-md hover:bg-gray-50 transition-colors">
+                    <div className="flex items-center space-x-3">
+                      <div className="w-5 h-5 rounded-full bg-gray-100 text-gray-600 text-xs flex items-center justify-center font-medium">
+                        {index + 1}
+                      </div>
+                      <div className="flex flex-col min-w-0">
+                        <span className="text-sm font-medium text-gray-900 truncate">
+                          {affiliate.name || affiliate.affiliate}
+                        </span>
+                        <span className="text-xs text-gray-500">
+                          {affiliate.clicks?.toLocaleString() || 0} clicks
+                        </span>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-sm font-semibold text-gray-900">
+                        ${affiliate.profit.toFixed(2)}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+
+        </div>
       </div>
     </div>
   );
